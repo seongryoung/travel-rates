@@ -37,3 +37,7 @@ jobs:
           git add rates.json
           git diff --quiet && git diff --staged --quiet || git commit -m "Exchange rate update"
           git push
+      
+      - name: Purge jsDelivr CDN cache
+        run: |
+          curl -X GET "https://purge.jsdelivr.net/gh/seongryoung/travel-rates@main/rates.json"
