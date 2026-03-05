@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '17 0,12 * * *'
+    - cron: '17 0,8,16 * * *'   # 하루 3회 실행 (UTC 기준)
   workflow_dispatch:
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
         run: |
           jq '{
             base: .source,
-            date: (.timestamp | strftime("%Y-%m-%d")),
+            date: (.timestamp | strftime("%Y-%m-%d %H:%M")),
             rates: (.quotes | with_entries(.key |= sub("^USD"; "")))
           }' raw.json > rates.json
 
@@ -35,5 +35,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add rates.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "Daily rate update"
+          git diff --quiet && git diff --staged --quiet || git commit -m "Exchange rate update"
           git push
