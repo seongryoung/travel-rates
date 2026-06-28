@@ -30,11 +30,34 @@ jobs:
             rates: (.quotes | with_entries(.key |= sub("^USD"; "")))
           }' raw.json > rates.json
 
+      - name: Update yearly exchange rate history
+        run: |
+          YEAR="$(jq -r '.date[0:4]' rates.json)"
+          HISTORY_FILE="rates-${YEAR}.json"
+
+          if [ -f "$HISTORY_FILE" ]; then
+            jq --slurpfile current rates.json '
+              .base = $current[0].base
+              | .year = ($current[0].date[0:4])
+              | .updatedAt = $current[0].date
+              | .history = ((.history // {}) + {($current[0].date): $current[0].rates})
+            ' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp"
+          else
+            jq '{
+              base,
+              year: (.date[0:4]),
+              updatedAt: .date,
+              history: {(.date): .rates}
+            }' rates.json > "${HISTORY_FILE}.tmp"
+          fi
+
+          mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add rates.json
+          git add rates.json rates-*.json
           git diff --quiet && git diff --staged --quiet || git commit -m "Exchange rate update"
           git push
       
