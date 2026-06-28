@@ -5,8 +5,12 @@ permissions:
 
 on:
   schedule:
-    - cron: '17 0,8,16 * * *'   # 하루 3회 실행 (UTC 기준)
+    - cron: '17 0 * * *'
   workflow_dispatch:
+
+concurrency:
+  group: update-exchange-rates
+  cancel-in-progress: true
 
 jobs:
   update:
@@ -14,21 +18,29 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: Fetch exchange rates
         run: |
-          curl -f "https://api.exchangerate.host/live?access_key=$API_KEY&source=USD" -o raw.json
+          curl --fail --silent --show-error --location \
+            "https://v6.exchangerate-api.com/v6/${API_KEY}/latest/USD" \
+            -o raw.json
         env:
           API_KEY: ${{ secrets.EXCHANGE_API_KEY }}
 
       - name: Transform JSON
         run: |
-          jq '{
-            base: .source,
-            date: (.timestamp | strftime("%Y-%m-%d %H:%M")),
-            rates: (.quotes | with_entries(.key |= sub("^USD"; "")))
-          }' raw.json > rates.json
+          jq -e '
+            if .result != "success" then
+              error("ExchangeRate-API error: " + (."error-type" // "unknown"))
+            else
+              {
+                base: .base_code,
+                date: (.time_last_update_unix | strftime("%Y-%m-%d %H:%M")),
+                rates: (.conversion_rates | del(.USD))
+              }
+            end
+          ' raw.json > rates.json
 
       - name: Update yearly exchange rate history
         run: |
@@ -58,9 +70,15 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add rates.json rates-*.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "Exchange rate update"
-          git push
-      
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Exchange rate update"
+            git push
+          fi
+
       - name: Purge jsDelivr CDN cache
         run: |
-          curl -X GET "https://purge.jsdelivr.net/gh/seongryoung/travel-rates@main/rates.json"
+          curl --fail --silent --show-error -X GET \
+            "https://purge.jsdelivr.net/gh/seongryoung/travel-rates@main/rates.json"
